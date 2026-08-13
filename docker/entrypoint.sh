@@ -14,6 +14,16 @@ if [[ -d /usr/share/cups-defaults ]] && [[ -z "$(ls -A /etc/cups 2>/dev/null)" ]
   cp -a /usr/share/cups-defaults/. /etc/cups/
 fi
 
+# CUPS 2.4 answers 400 Bad Request to any Host header that is not ServerName or
+# a ServerAlias — so reaching the web UI through a reverse proxy fails on the
+# hostname alone, whatever the ACLs say. Applied on every boot rather than in the
+# Dockerfile because the seed above only runs on an empty volume: a deployment
+# that already has state would otherwise never pick this up.
+if [[ -n "${CUPS_SERVER_ALIAS:-}" ]] && ! grep -qxF "ServerAlias ${CUPS_SERVER_ALIAS}" /etc/cups/cupsd.conf; then
+  echo "entrypoint: adding ServerAlias ${CUPS_SERVER_ALIAS}"
+  printf '\nServerAlias %s\n' "${CUPS_SERVER_ALIAS}" >> /etc/cups/cupsd.conf
+fi
+
 # CUPS admin needs a real Unix user in SystemGroup (lpadmin) — the package
 # creates none, so without this every /admin request 401s no matter the
 # password. Credentials come from env so a deployment can inject its own.
