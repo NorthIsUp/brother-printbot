@@ -1,0 +1,75 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # arm64 ONLY, and native rather than QEMU. install-brother-drivers adds an
+    # armhf multiarch (32-bit ARM — Brother ship their filters as armhf .debs)
+    # which is slow and flaky under emulation. The consumer is a Raspberry Pi 5
+    # cluster; do not add an amd64 target, it would drag in an x86 multiarch we
+    # have no use for.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/northisup/brother-printbot
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          # load as well as push: single-platform, so the image lands in the
+          # local daemon and the verify step below can run it without a pull.
+          load: true
+          # Don't publish from a PR — still builds, so the driver install is
+          # exercised on every change.
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the Brother driver actually made it in
+        # The whole point of this image. A build that silently loses the PPD is
+        # indistinguishable from a good one until someone tries to print.
+        # Checks the artifact directly — `lpinfo -m` needs a running cupsd and
+        # returns nothing under `docker run`, which would fail a good image.
+        run: |
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          echo "verifying $IMAGE"
+          docker run --rm "$IMAGE" sh -c '
+            set -e
+            test -f /usr/share/cups/model/brhl4570cdw.ppd
+            dpkg -l | grep -q "^ii  hl4570cdwcupswrapper"
+            dpkg -l | grep -q "^ii  hl4570cdwlpr"
+            command -v avahi-daemon >/dev/null
+            echo "OK: HL-4570CDW PPD + armhf driver packages + avahi present"
+          ' || { echo "::error::image is missing the Brother driver or avahi"; exit 1; }
