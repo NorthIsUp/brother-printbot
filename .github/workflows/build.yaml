@@ -10,10 +10,11 @@ on:
 
 jobs:
   build:
-    # arm64 native, not QEMU: install-brother-drivers adds an armhf multiarch and
-    # pulls Brother's 32-bit filters, which is slow and flaky under emulation.
-    # The consumer is a Raspberry Pi 5 cluster, so arm64 is the only arch that
-    # matters — the driver install would need i386 on amd64 anyway.
+    # arm64 ONLY, and native rather than QEMU. install-brother-drivers adds an
+    # armhf multiarch (32-bit ARM — Brother ship their filters as armhf .debs)
+    # which is slow and flaky under emulation. The consumer is a Raspberry Pi 5
+    # cluster; do not add an amd64 target, it would drag in an x86 multiarch we
+    # have no use for.
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
