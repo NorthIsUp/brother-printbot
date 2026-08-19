@@ -136,8 +136,13 @@ host_elf_machine() {
 
 build_native_cupsconfig() {
   local model_dir="$1" src wrapper name out
-  src="$(find "$REPO_DIR" "$(dirname "$REPO_DIR")" -type f -name brcupsconfig.c 2>/dev/null | head -n1)"
+  # oh_brother.zsh untars the source into "$(pwd)/build_<model>/", where pwd is
+  # whatever the caller's working directory happens to be — not $REPO_DIR. Search
+  # the filesystem rather than guessing; -xdev keeps it to one filesystem and it
+  # is a build container either way.
+  src="$(find / -xdev -type f -name brcupsconfig.c 2>/dev/null | head -n1)"
   [[ -n "$src" ]] || { echo "  no brcupsconfig.c found; skipping native build."; return 1; }
+  echo "  found source: $src"
 
   wrapper="$(find "$model_dir/cupswrapper" -maxdepth 1 -type f -name 'cupswrapper*' 2>/dev/null | head -n1)"
   name="$(grep -ohE 'brcupsconf[a-z0-9]+' "$wrapper" 2>/dev/null | sort -u | head -n1)"
