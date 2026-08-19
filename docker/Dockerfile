@@ -41,6 +41,21 @@ RUN sed -i \
   && sed -i '/^  Encryption Required$/d' /etc/cups/cupsd.conf \
   && printf '\nDefaultEncryption Never\n' >> /etc/cups/cupsd.conf
 
+# Brother's GPL BR-Script3 PPD, rebranded 4070 -> 4570 (see the header in the
+# file). This is the queue's PPD, NOT Brother's hl4570cdw.ppd.
+#
+# The printer has a real PostScript 3 interpreter in firmware: its own
+# `@PJL INFO CONFIG` reports LANGUAGES = PCL, POSTSCRIPT, PCLXL, XL2HB. So the
+# whole vendor driver chain is avoidable - CUPS renders PostScript, pstops hands
+# it to the socket backend, and the printer rasterises for itself, in colour,
+# with no Brother binary and no x86 emulation anywhere.
+#
+# Brother's own PPD cannot be used for this: every one of its options has empty
+# invocation code ("          ") because the values are meant to be read by the
+# i386 brcupsconfpt1 binary rather than sent to the printer. Point a queue at it
+# without that binary and paper size, duplex and colour silently stop working.
+COPY docker/ppd/BR4570_2_GPL.ppd /usr/share/ppd/BR4570_2_GPL.ppd
+
 # Kept so the entrypoint can repopulate /etc/cups when a volume is mounted over
 # it. Without this, persisting printers.conf costs you cupsd.conf.
 RUN cp -a /etc/cups /usr/share/cups-defaults
