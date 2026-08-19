@@ -1,0 +1,2 @@
+# PPDs are CRLF by convention; keep them byte-exact.
+*.ppd -text
