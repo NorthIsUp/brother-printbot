@@ -22,6 +22,16 @@ RUN apt-get update \
        cups-filters \
   && rm -rf /var/lib/apt/lists/*
 
+# macOS imposes "Pages per Sheet" itself and still sends number-up, so pdftopdf
+# imposed a second time and 4-up printed as 16-up. Shim pdftopdf for jobs macOS
+# has already laid out; the .convs entry undercuts cups-filters' cost 66 so cupsd
+# picks the wrapper. Must come after cups-filters, which provides the real
+# pdftopdf the wrapper execs. See docker/filter/pdftopdf-nonup for the full why.
+COPY docker/filter/pdftopdf-nonup /usr/lib/cups/filter/pdftopdf-nonup
+COPY docker/mime/macos-nonup.convs /usr/share/cups/mime/macos-nonup.convs
+RUN chmod 755 /usr/lib/cups/filter/pdftopdf-nonup \
+  && chown root:root /usr/lib/cups/filter/pdftopdf-nonup
+
 # Listen beyond loopback and share queues by default: in Kubernetes the web UI is
 # reached from another pod, and an unshared queue is never advertised at all.
 # Done with sed, not cupsctl — cupsctl talks to a running cupsd, which there is
@@ -51,9 +61,16 @@ RUN sed -i \
 # with no Brother binary and no x86 emulation anywhere.
 #
 # Brother's own PPD cannot be used for this: every one of its options has empty
-# invocation code ("          ") because the values are meant to be read by the
-# i386 brcupsconfpt1 binary rather than sent to the printer. Point a queue at it
-# without that binary and paper size, duplex and colour silently stop working.
+# invocation code ("          ") because the values are meant to be consumed by
+# Brother's own chain rather than sent to the printer. Point a queue at it and
+# paper size, duplex and colour silently stop working.
+#
+# Note the blocker is NOT brcupsconfpt1, which install-brother-drivers already
+# rebuilds from Brother's GPL source and which runs natively as aarch64 here.
+# That binary emits no printer bytes at all — it shells out to brprintconf to
+# write a config file. The wall is one layer further down: brprintconf_hl4570cdw
+# and brhl4570cdwfilter are i386-only, stripped, and their source is a 404. So
+# the native path stays closed on arm64 no matter what happens to the wrapper.
 COPY docker/ppd/BR4570_2_GPL.ppd /usr/share/ppd/BR4570_2_GPL.ppd
 
 # Kept so the entrypoint can repopulate /etc/cups when a volume is mounted over

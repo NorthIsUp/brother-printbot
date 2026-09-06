@@ -361,20 +361,30 @@ restore
 *%%%%% Resolution and Appearance Control %%%%%
 *DefaultResolution: 600dpi
 
-*OpenUI *CAPT/Print Quality:PickOne
-*OrderDependency: 10 AnySetup *CAPT
-*DefaultCAPT: Fine
-*CAPT Fine/Normal (600 x 600 dpi): "<</BRApt 0 /HWResolution [600 600]>> setpagedevice"
-*CAPT SuperFine/Fine (2400 dpi class): "<</BRApt 2 /HWResolution [600 600]>> setpagedevice"
-*?CAPT: "
+*% Renamed from the vendor *CAPT option. CUPS builds the IPP print-quality
+*% attribute only from *cupsPrintQuality, so under the vendor keyword this queue
+*% advertised print-quality-supported = normal and driverless clients — macOS
+*% among them — offered a single "Normal" choice. The invocation code below is
+*% byte-for-byte what *CAPT carried; only the keyword changed.
+*%
+*% Two levels, not three. Both choices are HWResolution [600 600] and differ only
+*% in /BRApt, Brother's resolution-enhancement mode, so "2400 dpi class" is an
+*% enhancement rather than a 2400 dpi raster — writing [600 2400] here would be
+*% wrong. The old *?CAPT query had a Draft branch no choice could ever return
+*% (boilerplate from a model with a sub-600 mode); it is dropped rather than
+*% carried over, so nobody mistakes it for a third level.
+*OpenUI *cupsPrintQuality/Print Quality:PickOne
+*OrderDependency: 10 AnySetup *cupsPrintQuality
+*DefaultcupsPrintQuality: Normal
+*cupsPrintQuality Normal/Normal (600 x 600 dpi): "<</BRApt 0 /HWResolution [600 600]>> setpagedevice"
+*cupsPrintQuality High/Fine (2400 dpi class): "<</BRApt 2 /HWResolution [600 600]>> setpagedevice"
+*?cupsPrintQuality: "
 	currentpagedevice /BRApt get 2 eq
-	{(SuperFine)}
-	{
-		currentpagedevice/HWResolution get 0 get 600 eq{(Fine)}{(Draft)}ifelse
-	}ifelse = flush
+	{(High)}
+	{(Normal)}ifelse = flush
 "
 *End
-*CloseUI: *CAPT
+*CloseUI: *cupsPrintQuality
 
 *OpenUI *TonerSaveMode/Toner Save: PickOne
 *DefaultTonerSaveMode: Off
