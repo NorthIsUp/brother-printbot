@@ -24,7 +24,7 @@ if [[ -n "${CUPS_SERVER_ALIAS:-}" ]] && ! grep -qxF "ServerAlias ${CUPS_SERVER_A
   printf '\nServerAlias %s\n' "${CUPS_SERVER_ALIAS}" >> /etc/cups/cupsd.conf
 fi
 
-# Drop CUPS's default `_cups` DNS-SD subtype, keeping only `_print`. macOS reads
+# Drop CUPS's default `_cups` DNS-SD subtype, keeping `_print,_universal`. macOS reads
 # `_cups` as "shared CUPS queue": the Add Printer dialog lists it as Bonjour
 # Shared and assigns Apple's Generic PostScript PPD, which gates duplex behind an
 # APOptionalDuplexer installable option that no server-side setting can reach.
@@ -37,10 +37,28 @@ fi
 # /etc/cups is a mounted volume, the seed only runs when that volume is empty, so
 # an existing deployment never picks up a build-time edit to cupsd.conf. That is
 # exactly how the first attempt at this shipped an image whose setting was inert.
-if ! grep -qxF 'DNSSDSubTypes _print' /etc/cups/cupsd.conf; then
-  echo "entrypoint: setting DNSSDSubTypes _print (drops _cups so macOS uses driverless)"
-  sed -i '/^DNSSDSubTypes /d' /etc/cups/cupsd.conf
-  printf '\nDNSSDSubTypes _print\n' >> /etc/cups/cupsd.conf
+CUPS_SUBTYPES='BrowseDNSSDSubTypes _print,_universal'
+if ! grep -qxF "$CUPS_SUBTYPES" /etc/cups/cupsd.conf; then
+  echo "entrypoint: setting ${CUPS_SUBTYPES} (drops _cups so macOS uses driverless)"
+  sed -i '/^BrowseDNSSDSubTypes /d; /^DNSSDSubTypes /d' /etc/cups/cupsd.conf
+  printf '\n%s\n' "$CUPS_SUBTYPES" >> /etc/cups/cupsd.conf
+fi
+
+# Refuse to start on a config cupsd will not parse. An unknown directive is only
+# a warning to cupsd — it starts anyway and silently ignores the line — so a
+# typo'd directive looks exactly like a working one from the outside. This shipped
+# twice: `DNSSDSubTypes` (no such directive in CUPS 2.4; the real name carries the
+# Browse prefix) reached production as a no-op both times, and nothing surfaced it
+# until someone ran `cupsd -t` by hand.
+if ! cupsd -t 2>&1 | tee /tmp/cupsd-t.log | grep -qi 'is OK'; then
+  echo "entrypoint: FATAL cupsd rejected the config:" >&2
+  cat /tmp/cupsd-t.log >&2
+  exit 1
+fi
+if grep -qi 'unknown directive' /tmp/cupsd-t.log; then
+  echo "entrypoint: FATAL cupsd.conf has an unknown directive — refusing to start:" >&2
+  grep -i 'unknown directive' /tmp/cupsd-t.log >&2
+  exit 1
 fi
 
 # CUPS admin needs a real Unix user in SystemGroup (lpadmin) — the package
