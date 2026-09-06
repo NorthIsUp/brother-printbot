@@ -6,8 +6,20 @@ ENV SKIP_CUPS_START=1
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY scripts/install-brother-drivers.sh /usr/local/sbin/install-brother-drivers
 
+# The trim has to share this RUN with the install: layers are additive, so
+# deleting in a later one leaves all 453 MB in this layer and saves nothing.
+# install-brother-drivers pulls qemu-user-static, which in trixie is
+# transitional and depends on qemu-user — every target architecture at once,
+# 453 MB across 33 binaries. Debian offers no per-architecture package, and the
+# only emulation here is i386 (Brother ship brprintconf_hl4570cdw and
+# brhl4570cdwfilter as stripped i386 ELFs with no source and no ARM build). The
+# script itself handles no other foreign machine — it warns and skips on any
+# ELF e_machine but 3 — so the other 32 can never be reached.
 RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/sbin/install-brother-drivers \
-  && /usr/local/sbin/install-brother-drivers "HL-4570CDW"
+  && /usr/local/sbin/install-brother-drivers "HL-4570CDW" \
+  && find /usr/bin -maxdepth 1 -name 'qemu-*' \
+       ! -name 'qemu-i386' ! -name 'qemu-i386-static' -delete \
+  && qemu-i386-static -version | head -1
 
 # AirPrint = a shared CUPS queue advertised over DNS-SD. CUPS does the
 # advertising itself but only when an Avahi daemon is present to register with,
