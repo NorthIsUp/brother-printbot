@@ -32,17 +32,10 @@ COPY docker/mime/macos-nonup.convs /usr/share/cups/mime/macos-nonup.convs
 RUN chmod 755 /usr/lib/cups/filter/pdftopdf-nonup \
   && chown root:root /usr/lib/cups/filter/pdftopdf-nonup
 
-# DNSSDSubTypes drops CUPS's default `_cups` subtype, keeping only `_print`.
-# That subtype is what macOS reads as "this is a shared CUPS queue": the Add
-# Printer dialog then lists the queue as "Bonjour Shared" and hands it the
-# Generic PostScript driver, whose duplex is gated behind an APOptionalDuplexer
-# installable option that nothing here can set. Result: no duplex and one
-# quality level, despite the queue advertising Duplex=T and PQ4-5.
-#
-# Without `_cups` the queue reads as a plain IPP printer and macOS generates a
-# driverless PPD from the advertised attributes instead. Verified against this
-# queue with `lpadmin -m everywhere`, which yields "BR-Script3 - IPP Everywhere"
-# carrying a real *OpenUI *Duplex block and cupsPrintQuality Draft/Normal/High.
+# NOTE: DNSSDSubTypes is deliberately NOT set here — see entrypoint.sh. Anything
+# written to /etc/cups at build time is shadowed by the mounted volume on an
+# existing deployment, so settings that must apply to a live queue belong in the
+# entrypoint, not in this file.
 #
 # Listen beyond loopback and share queues by default: in Kubernetes the web UI is
 # reached from another pod, and an unshared queue is never advertised at all.
@@ -61,8 +54,7 @@ RUN sed -i \
   && printf '\nDefaultShared Yes\n' >> /etc/cups/cupsd.conf \
   && sed -i 's|^  Order allow,deny$|  Order allow,deny\n  Allow all|' /etc/cups/cupsd.conf \
   && sed -i '/^  Encryption Required$/d' /etc/cups/cupsd.conf \
-  && printf '\nDefaultEncryption Never\n' >> /etc/cups/cupsd.conf \
-  && printf '\nDNSSDSubTypes _print\n' >> /etc/cups/cupsd.conf
+  && printf '\nDefaultEncryption Never\n' >> /etc/cups/cupsd.conf
 
 # Brother's GPL BR-Script3 PPD, rebranded 4070 -> 4570 (see the header in the
 # file). This is the queue's PPD, NOT Brother's hl4570cdw.ppd.
