@@ -1,0 +1,13 @@
+#
+# Route PDF jobs through pdftopdf-nonup instead of pdftopdf.
+#
+# cups-filters ships this conversion at cost 66 in cupsfilters.convs. cupsd's
+# mimeAddFilter() replaces an existing filter whenever the stored cost is higher
+# than the new one, so 65 wins regardless of which .convs file loads first.
+#
+# The wrapper only differs from pdftopdf for jobs macOS has already imposed —
+# see docker/filter/pdftopdf-nonup for why that is necessary and why every
+# configuration-level alternative was ruled out.
+#
+# Tab-separated: source  destination  cost  filter
+application/pdf		application/vnd.cups-pdf		65	pdftopdf-nonup

@@ -1,0 +1,50 @@
+#!/bin/sh
+# Drop number-up for jobs macOS has already imposed itself.
+#
+# macOS renders Layout > "Pages per Sheet" client-side in cgpdftopdf and then
+# STILL forwards number-up in the IPP job ticket. pdftopdf, first filter in the
+# chain here, takes that at face value and imposes a second time: a 28-page
+# document asked for at 4-up arrived as a 7-page pre-imposed PDF and printed as
+# 16 logical pages per sheet (4x4).
+#
+# The server is not at fault under RFC 8011 — number-up is a Job Template
+# attribute and a conformant printer performs it. The job ticket is the thing
+# that is self-contradictory: it declares PMTotalSidesImaged=7 and asks for
+# number-up=4 in the same breath. Apple's bug (apple/cups#5361); upstream CUPS
+# was offered this exact workaround as OpenPrinting/cups#971 and closed it
+# wontfix/platform-issue, so it has to live here.
+#
+# Why not the obvious alternatives:
+#   - number-up-default=1 cannot work. Printer defaults only fill in attributes
+#     the client omitted, and this queue's default was ALREADY 1 when the 16-up
+#     misprint happened.
+#   - number-up-supported cannot be narrowed per-queue; it is a file-scope
+#     constant in cupsd, and add_job() validates against a hardcoded list anyway.
+#   - Nothing advertised can help: cgpdftopdf reads only APAirPrint, cupsFax,
+#     cupsMaxCopies, DefaultOutputOrder and PageStackOrder from the PPD, and
+#     takes number-up straight from the job options.
+#
+# Stripping is CONDITIONAL, keyed on macOS's own "I already imposed this" flag,
+# so a non-Apple client that genuinely wants the server to do N-up still gets it.
+# When the box is unticked macOS sends the token as
+# "nocom.apple.print.PrintSettings.PMLayoutNUp..b.", which deliberately does not
+# match the leading-space pattern below.
+#
+# Only pdftopdf needs wrapping: it is the sole imposer in the PDF chain. pstops
+# is not a top-level filter here — pdftops spawns it as a DSC post-processor —
+# and the shimmed chain was verified end to end (7 pages in, 7 pages out, with
+# pstops confirmed not to re-arm).
+real=/usr/lib/cups/filter/pdftopdf
+opts=$5
+
+case " $opts " in
+  *" com.apple.print.PrintSettings.PMLayoutNUp..b. "*)
+    opts=$(printf '%s' "$opts" | sed -E 's/(^| )number-up(-layout)?=[^ ]*//g')
+    ;;
+esac
+
+# cupsd passes the file as $6 when it is not streaming on stdin; preserve both.
+if [ "$#" -ge 6 ]; then
+  exec "$real" "$1" "$2" "$3" "$4" "$opts" "$6"
+fi
+exec "$real" "$1" "$2" "$3" "$4" "$opts"
