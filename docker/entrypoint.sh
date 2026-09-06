@@ -24,6 +24,25 @@ if [[ -n "${CUPS_SERVER_ALIAS:-}" ]] && ! grep -qxF "ServerAlias ${CUPS_SERVER_A
   printf '\nServerAlias %s\n' "${CUPS_SERVER_ALIAS}" >> /etc/cups/cupsd.conf
 fi
 
+# Drop CUPS's default `_cups` DNS-SD subtype, keeping only `_print`. macOS reads
+# `_cups` as "shared CUPS queue": the Add Printer dialog lists it as Bonjour
+# Shared and assigns Apple's Generic PostScript PPD, which gates duplex behind an
+# APOptionalDuplexer installable option that no server-side setting can reach.
+# Without the subtype the queue reads as a plain IPP printer and macOS generates
+# a driverless PPD from the attributes we already advertise — verified against
+# this queue with `lpadmin -m everywhere`, which yields a real *OpenUI *Duplex
+# block plus cupsPrintQuality Draft/Normal/High.
+#
+# Same reason as ServerAlias above, and it is why the Dockerfile could not do it:
+# /etc/cups is a mounted volume, the seed only runs when that volume is empty, so
+# an existing deployment never picks up a build-time edit to cupsd.conf. That is
+# exactly how the first attempt at this shipped an image whose setting was inert.
+if ! grep -qxF 'DNSSDSubTypes _print' /etc/cups/cupsd.conf; then
+  echo "entrypoint: setting DNSSDSubTypes _print (drops _cups so macOS uses driverless)"
+  sed -i '/^DNSSDSubTypes /d' /etc/cups/cupsd.conf
+  printf '\nDNSSDSubTypes _print\n' >> /etc/cups/cupsd.conf
+fi
+
 # CUPS admin needs a real Unix user in SystemGroup (lpadmin) — the package
 # creates none, so without this every /admin request 401s no matter the
 # password. Credentials come from env so a deployment can inject its own.
